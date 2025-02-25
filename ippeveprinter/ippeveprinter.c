@@ -1546,6 +1546,19 @@ create_printer(
     "processing-stopped"
   };
 
+  // --- Label Printing Extension Values ---
+  static const char * const label_modes_supported[] = { // label-mode-supported values
+      "applicator", "cutter", "cutter-delayed", "kiosk", "peel-off", "peel-off-prepeel", "rewind", "rfid", "tear-off"
+  };
+  static const char * const media_tracking_supported[] = { // media-tracking-supported values
+      "continuous", "mark", "web"
+  };
+  static const int print_darkness_supported_levels = 32; // Example value, adjust as needed
+  static const int printer_darkness_supported_levels = 32; // Example value, adjust as needed
+  static const int print_speed_default_value = 500; // Example speed in hundredths of mm/s
+  static const int print_speed_supported_ranges[][2] = { {100, 1000} }; // Example range in hundredths of mm/s
+  static const int label_tear_offset_supported_range[][2] = { {0, 1000} }; // Example range in hundredths of mm
+
 
 #ifndef _WIN32
   // If a command was specified, make sure it exists and is executable...
@@ -1880,6 +1893,54 @@ create_printer(
   // which-jobs-supported
   ippAddStrings(printer->attrs, IPP_TAG_PRINTER, IPP_CONST_TAG(IPP_TAG_KEYWORD), "which-jobs-supported", sizeof(which_jobs) / sizeof(which_jobs[0]), NULL, which_jobs);
 
+
+  // ---  Start of Label Printing Extension Attributes ---
+
+  // label-mode-configured (Example default: 'tear-off', adjust as needed)
+  ippAddString(printer->attrs, IPP_TAG_PRINTER, IPP_CONST_TAG(IPP_TAG_KEYWORD), "label-mode-configured", NULL, "tear-off");
+
+  // label-mode-supported
+  ippAddStrings(printer->attrs, IPP_TAG_PRINTER, IPP_CONST_TAG(IPP_TAG_KEYWORD), "label-mode-supported", sizeof(label_modes_supported) / sizeof(label_modes_supported[0]), NULL, label_modes_supported);
+
+  // label-tear-offset-configured (Example default: 50, adjust as needed)
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "label-tear-offset-configured", 50);
+
+  // label-tear-offset-supported
+  ippAddRange(printer->attrs, IPP_TAG_PRINTER, "label-tear-offset-supported", label_tear_offset_supported_range[0][0], label_tear_offset_supported_range[0][1]);
+
+  // media-top-offset-supported
+  ippAddRange(printer->attrs, IPP_TAG_PRINTER, "media-top-offset-supported", 0, 100); // Example range, adjust as needed
+
+  // media-tracking-supported
+  ippAddStrings(printer->attrs, IPP_TAG_PRINTER, IPP_CONST_TAG(IPP_TAG_KEYWORD), "media-tracking-supported", sizeof(media_tracking_supported) / sizeof(media_tracking_supported[0]), NULL, media_tracking_supported);
+
+  // print-darkness-default (Example default: 0, adjust as needed)
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-darkness-default", 0);
+
+  // print-darkness-supported
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-darkness-supported", print_darkness_supported_levels);
+
+  // print-speed-default
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-speed-default", print_speed_default_value);
+
+  // print-speed-supported
+  if (sizeof(print_speed_supported_ranges) / sizeof(print_speed_supported_ranges[0]) > 0) {
+      ippAddRange(printer->attrs, IPP_TAG_PRINTER, "print-speed-supported", print_speed_supported_ranges[0][0], print_speed_supported_ranges[0][1]);
+      // You can add more ranges if needed, looping through `print_speed_supported_ranges`
+  } else {
+      ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-speed-supported", print_speed_default_value); // Or a single value if no ranges
+  }
+
+
+  // printer-darkness-configured (Example default: 50, adjust as needed)
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "printer-darkness-configured", 50);
+
+  // printer-darkness-supported
+  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "printer-darkness-supported", printer_darkness_supported_levels);
+
+  // --- End of Label Printing Extension Attributes ---
+
+  fprintf(stderr, "debug_attributes\n");
   debug_attributes("Printer", printer->attrs, 0);
 
   // Register the printer with DNS-SD...
