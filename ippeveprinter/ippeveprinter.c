@@ -238,7 +238,7 @@ static ippeve_client_t	*create_client(ippeve_printer_t *printer, int sock);
 static ippeve_job_t	*create_job(ippeve_client_t *client);
 static int		create_job_file(ippeve_job_t *job, char *fname, size_t fnamesize, const char *dir, const char *ext);
 static int		create_listener(const char *name, int port, int family);
-static ipp_t		*create_media_col(const char *media, const char *source, const char *type, ipp_t *media_size, int bottom, int left, int right, int top);
+static ipp_t		*create_media_col(const char *media, const char *source, const char *type, ipp_t *media_size, int bottom, int left, int right, int top, const char *media_tracking, int label_tear_offset);
 static ipp_t		*create_media_size(int width, int length);
 static ipp_t		*create_media_size_range(int min_width, int max_width, int min_length, int max_length);
 static ippeve_printer_t	*create_printer(const char *servername, int serverport, const char *name, const char *location, const char *icons, const char *strings, cups_array_t *docformats, const char *subtypes, const char *directory, const char *command, const char *device_uri, const char *output_format, ipp_t *attrs);
@@ -1261,7 +1261,9 @@ create_media_col(const char *media,	// I - Media name
 		 int        bottom,	// I - Bottom margin in 2540ths
 		 int        left,	// I - Left margin in 2540ths
 		 int        right,	// I - Right margin in 2540ths
-		 int        top)	// I - Top margin in 2540ths
+		 int        top,	// I - Top margin in 2540ths
+		 const char *media_tracking,   // I - media-tracking value (new)
+		 int        label_tear_offset) // I - label-tear-offset
 {
   ipp_t		*media_col = ippNew();	// media-col value
   char		media_key[256];		// media-key value
@@ -1299,6 +1301,13 @@ create_media_col(const char *media,	// I - Media name
     ippAddString(media_col, IPP_TAG_PRINTER, IPP_TAG_KEYWORD, "media-source", NULL, source);
   if (type)
     ippAddString(media_col, IPP_TAG_PRINTER, IPP_TAG_KEYWORD, "media-type", NULL, type);
+
+  // Add the new attributes
+  if (media_tracking)
+      ippAddString(media_col, IPP_TAG_PRINTER, IPP_TAG_KEYWORD, "media-tracking", NULL, media_tracking);
+
+  if (label_tear_offset >= 0) // Assuming -1 or similar is used to indicate no offset
+      ippAddInteger(media_col, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "media-top-offset", label_tear_offset);
 
   ippDelete(media_size);
 
@@ -1553,8 +1562,8 @@ create_printer(
   static const char * const media_tracking_supported[] = { // media-tracking-supported values
       "continuous", "mark", "web"
   };
-  static const int print_darkness_supported_levels = 32; // Example value, adjust as needed
-  static const int printer_darkness_supported_levels = 32; // Example value, adjust as needed
+  //static const int print_darkness_supported_levels = 32; // Example value, adjust as needed
+  //static const int printer_darkness_supported_levels = 32; // Example value, adjust as needed
   static const int print_speed_default_value = 500; // Example speed in hundredths of mm/s
   static const int print_speed_supported_ranges[][2] = { {100, 1000} }; // Example range in hundredths of mm/s
   static const int label_tear_offset_supported_range[][2] = { {0, 1000} }; // Example range in hundredths of mm
@@ -1918,7 +1927,7 @@ create_printer(
   ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-darkness-default", 0);
 
   // print-darkness-supported
-  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-darkness-supported", print_darkness_supported_levels);
+  ippAddRange(printer->attrs, IPP_TAG_PRINTER, "print-darkness-supported", 0, 100);
 
   // print-speed-default
   ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-speed-default", print_speed_default_value);
@@ -1931,12 +1940,11 @@ create_printer(
       ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "print-speed-supported", print_speed_default_value); // Or a single value if no ranges
   }
 
-
   // printer-darkness-configured (Example default: 50, adjust as needed)
   ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "printer-darkness-configured", 50);
 
   // printer-darkness-supported
-  ippAddInteger(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_INTEGER, "printer-darkness-supported", printer_darkness_supported_levels);
+  ippAddRange(printer->attrs, IPP_TAG_PRINTER, "printer-darkness-supported", 0, 100);
 
   // --- End of Label Printing Extension Attributes ---
 
@@ -4300,12 +4308,12 @@ load_legacy_attributes(
       ippAddRange(media_size, IPP_TAG_ZERO, "x-dimension", pwg->width, pwg2->width);
       ippAddRange(media_size, IPP_TAG_ZERO, "y-dimension", pwg->length, pwg2->length);
 
-      col = create_media_col(NULL, source, NULL, media_size, bottom, left, right, top);
+      col = create_media_col(NULL, source, NULL, media_size, bottom, left, right, top, "continuous", 0);
     }
     else
     {
       // Sheet size
-      col = create_media_col(media[i], source, NULL, create_media_size(pwg->width, pwg->length), bottom, left, right, top);
+      col = create_media_col(media[i], source, NULL, create_media_size(pwg->width, pwg->length), bottom, left, right, top, "continuous", 0);
     }
 
     if (attr)
@@ -4320,9 +4328,9 @@ load_legacy_attributes(
   pwg = pwgMediaForPWG(ready[0]);
 
   if (pwg->width == 21000)
-    col = create_media_col(ready[0], "main", "stationery", create_media_size(pwg->width, pwg->length), ppm_color > 0 ? media_bottom_margin_supported_color[1] : media_bottom_margin_supported[0], media_lr_margin_supported[0], media_lr_margin_supported[0], ppm_color > 0 ? media_top_margin_supported_color[1] : media_top_margin_supported[0]);
+    col = create_media_col(ready[0], "main", "stationery", create_media_size(pwg->width, pwg->length), ppm_color > 0 ? media_bottom_margin_supported_color[1] : media_bottom_margin_supported[0], media_lr_margin_supported[0], media_lr_margin_supported[0], ppm_color > 0 ? media_top_margin_supported_color[1] : media_top_margin_supported[0], "continuous", 0);
   else
-    col = create_media_col(ready[0], "main", "stationery", create_media_size(pwg->width, pwg->length), ppm_color > 0 ? media_bottom_margin_supported_color[1] : media_bottom_margin_supported[0], media_lr_margin_supported[1], media_lr_margin_supported[1], ppm_color > 0 ? media_top_margin_supported_color[1] : media_top_margin_supported[0]);
+    col = create_media_col(ready[0], "main", "stationery", create_media_size(pwg->width, pwg->length), ppm_color > 0 ? media_bottom_margin_supported_color[1] : media_bottom_margin_supported[0], media_lr_margin_supported[1], media_lr_margin_supported[1], ppm_color > 0 ? media_top_margin_supported_color[1] : media_top_margin_supported[0], "continuous", 0);
 
   ippAddCollection(attrs, IPP_TAG_PRINTER, "media-col-default", col);
 
@@ -4376,7 +4384,7 @@ load_legacy_attributes(
       top    = ppm_color > 0 ? media_top_margin_supported_color[1] : media_top_margin_supported[0];
     }
 
-    col = create_media_col(ready[i], source, type, create_media_size(pwg->width, pwg->length), bottom, left, right, top);
+    col = create_media_col(ready[i], source, type, create_media_size(pwg->width, pwg->length), bottom, left, right, top, "continuous", 0);
     ippSetCollection(attrs, &attr, i, col);
     ippDelete(col);
   }
@@ -4567,6 +4575,7 @@ load_legacy_attributes(
 
   // printer-resolution-supported
   ippAddResolution(attrs, IPP_TAG_PRINTER, "printer-resolution-supported", IPP_RES_PER_INCH, 600, 600);
+  //ippAddResolutions(attrs, IPP_TAG_PRINTER, printer-resolution-supported, IPP_RES_PER_INCH, )
 
   // printer-supply and printer-supply-description
   if (ppm_color > 0)
@@ -6488,7 +6497,7 @@ show_media(ippeve_client_t  *client)	// I - Client connection
         else
           media_ready = ippAddString(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_KEYWORD, "media-ready", NULL, media_size);
 
-        media_col = create_media_col(media_size, media_source, media_type, create_media_size(media->width, media->length), -1, -1, -1, -1);
+        media_col = create_media_col(media_size, media_source, media_type, create_media_size(media->width, media->length), -1, -1, -1, -1, "continuous", 0);
 
         if (media_col_ready)
           ippSetCollection(printer->attrs, &media_col_ready, ippGetCount(media_col_ready), media_col);
